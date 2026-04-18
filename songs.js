@@ -2,14 +2,17 @@
 // All melodies are traditional / classical and in the public domain.
 
 const NOTE = {
+  E2: 40, F2: 41, G2: 43, A2: 45, B2: 47,
   C3: 48, D3: 50, E3: 52, F3: 53, G3: 55, A3: 57, B3: 59,
   C4: 60, D4: 62, E4: 64, F4: 65, G4: 67, A4: 69, B4: 71,
   C5: 72, D5: 74, E5: 76, F5: 77, G5: 79, A5: 81, B5: 83,
   C6: 84, D6: 86, E6: 88,
+  Db3: 49, Eb3: 51, Gb3: 54, Ab3: 56, Bb3: 58,
   Db4: 61, Eb4: 63, Gb4: 66, Ab4: 68, Bb4: 70,
   Db5: 73, Eb5: 75, Gb5: 78, Ab5: 80, Bb5: 82,
-  Cs4: 61, Cs5: 73, Ds5: 75, Fs5: 78, Gs5: 80, As5: 82,
-  Ds4: 63, Fs4: 66, Gs4: 68, As4: 70,
+  Cs3: 49, Ds3: 51, Fs3: 54, Gs3: 56, As3: 58,
+  Cs4: 61, Ds4: 63, Fs4: 66, Gs4: 68, As4: 70,
+  Cs5: 73, Ds5: 75, Fs5: 78, Gs5: 80, As5: 82,
 };
 
 function n(name, dur = 1) {
@@ -17,6 +20,64 @@ function n(name, dur = 1) {
 }
 
 const SONGS = [
+  // ---- Original Phonk tracks (composed for this game) ----
+  {
+    id: 'phonk-shadow-drift',
+    title: 'Phonk · Shadow Drift (Original)',
+    bpm: 140,
+    notes: [
+      n('F3', 0.5), n('F3', 0.5), n('Ab3'), n('C4'),
+      n('F3', 0.5), n('Eb3', 0.5), n('F3', 0.5), n('C3', 0.5),
+      n('Ab3', 0.5), n('G3', 0.5), n('F3'), n('Eb3', 0.5), n('Db3', 0.5),
+      n('C3'), n('C3'),
+      n('F3', 0.5), n('F3', 0.5), n('Ab3'), n('C4'),
+      n('F3', 0.5), n('Eb3', 0.5), n('F3', 0.5), n('C3', 0.5),
+      n('Eb4', 0.5), n('Db4', 0.5), n('C4'), n('Ab3', 0.5), n('G3', 0.5),
+      n('F3'), n('F3', 2),
+      n('Ab3', 0.5), n('C4', 0.5), n('Eb4'), n('F4'),
+      n('Eb4', 0.5), n('Db4', 0.5), n('C4'), n('Bb3', 0.5), n('Ab3', 0.5),
+      n('F3'), n('F3', 0.5), n('Ab3', 0.5), n('F3', 0.5), n('C3', 0.5),
+      n('F3', 2),
+    ],
+  },
+  {
+    id: 'phonk-night-prowl',
+    title: 'Phonk · Night Prowl (Original)',
+    bpm: 150,
+    notes: [
+      n('A2'), n('A2'), n('C3', 0.5), n('E3', 0.5), n('A3'),
+      n('A2'), n('G2'), n('A2', 0.5), n('E3', 0.5),
+      n('C3', 0.5), n('B2', 0.5), n('A2'), n('G2', 0.5), n('F2', 0.5),
+      n('E2', 2),
+      n('A3', 0.5), n('C4', 0.5), n('E4'), n('A4'),
+      n('G4', 0.5), n('F4', 0.5), n('E4', 0.5), n('C4', 0.5),
+      n('A3'), n('E3', 0.5), n('A3', 0.5), n('C4'),
+      n('A3', 2),
+      n('A2'), n('A2'), n('E3'), n('A3'),
+      n('G3', 0.5), n('F3', 0.5), n('E3'), n('C3'),
+      n('A2', 0.5), n('E3', 0.5), n('A3', 0.5), n('E3', 0.5),
+      n('A2', 2),
+    ],
+  },
+  {
+    id: 'phonk-dark-runner',
+    title: 'Phonk · Dark Runner (Original)',
+    bpm: 155,
+    notes: [
+      n('E3', 0.5), n('E3', 0.5), n('G3'), n('B3'),
+      n('E3', 0.5), n('G3', 0.5), n('B3', 0.5), n('E4', 0.5),
+      n('D4', 0.5), n('C4', 0.5), n('B3'), n('A3', 0.5), n('G3', 0.5),
+      n('E3', 2),
+      n('E3', 0.5), n('E3', 0.5), n('G3', 0.5), n('B3', 0.5),
+      n('E4'), n('D4', 0.5), n('B3', 0.5),
+      n('G3', 0.5), n('E3', 0.5), n('G3', 0.5), n('B3', 0.5),
+      n('D4'), n('B3'),
+      n('G3'), n('A3'), n('B3'), n('D4'),
+      n('E4', 0.5), n('D4', 0.5), n('B3', 0.5), n('G3', 0.5),
+      n('E3'), n('G3', 0.5), n('B3', 0.5), n('E4', 2),
+      n('E3', 2),
+    ],
+  },
   {
     id: 'ode-to-joy',
     title: 'Ode an die Freude (Beethoven)',

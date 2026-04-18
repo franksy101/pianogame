@@ -155,16 +155,34 @@
 
     <div class="buttons">
       <button id="start-btn">Spielen</button>
-      <button id="close-menu">Schließen</button>
+      <button id="open-hof" class="secondary">Hall of Fame</button>
+      <button id="close-menu" class="secondary">Schließen</button>
     </div>
   </div>
 
   <div id="game-over" class="panel hidden">
     <h1 id="go-title">Game Over</h1>
-    <div id="go-score"></div>
+    <div id="go-song" class="go-song"></div>
+    <div id="go-big-score"></div>
+    <div id="go-rank" class="go-rank"></div>
+    <div id="go-breakdown" class="go-breakdown"></div>
+    <div id="go-stats-grid" class="stats-grid"></div>
     <div class="buttons">
       <button id="retry-btn">Nochmal</button>
-      <button id="back-menu-btn">Menü</button>
+      <button id="hof-from-go" class="secondary">Hall of Fame</button>
+      <button id="back-menu-btn" class="secondary">Menü</button>
+    </div>
+  </div>
+
+  <div id="hof-panel" class="panel hidden">
+    <h1>🏆 Hall of Fame</h1>
+    <div class="hof-controls">
+      <select id="hof-filter"><option value="">Alle Songs</option></select>
+      <button id="hof-clear" class="secondary tiny">Löschen</button>
+    </div>
+    <div id="hof-list"></div>
+    <div class="buttons">
+      <button id="hof-close">Zurück</button>
     </div>
   </div>
 

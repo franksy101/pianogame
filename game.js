@@ -543,6 +543,12 @@ const liveModeSelect = document.getElementById('live-mode');
 const liveHueInput = document.getElementById('live-hue-color');
 const visualCanvas = document.getElementById('visual-canvas');
 const helpBtn = document.getElementById('help-btn');
+const hofPanel = document.getElementById('hof-panel');
+const hofFilter = document.getElementById('hof-filter');
+const hofClose = document.getElementById('hof-close');
+const hofClear = document.getElementById('hof-clear');
+const openHof = document.getElementById('open-hof');
+const hofFromGo = document.getElementById('hof-from-go');
 const helpOverlay = document.getElementById('help-overlay');
 const closeHelpBtn = document.getElementById('close-help');
 const bgA = document.getElementById('bg-a');
@@ -772,7 +778,23 @@ const game = {
   laneLastSpawn: [-1, -1, -1, -1],
   speedMul: 1.0,
   tileFallSeconds: 2.0,
+  stats: null,
 };
+
+function newStats() {
+  return {
+    touches: 0,
+    hits: 0,
+    perfect: 0,
+    great: 0,
+    good: 0,
+    missedTaps: 0,
+    missedTiles: 0,
+    totalTiles: 0,
+    holdSeconds: 0,
+    startTs: Date.now(),
+  };
+}
 
 const LEAD_IN_SECONDS = 3.0; // countdown before first tile reaches hit line
 const SONG_LOOPS = 2;         // repeat each song to extend playtime
@@ -792,9 +814,10 @@ function loadSong(songId) {
 
 function startGame() {
   Audio.init();
-  loadSong(settings.songId);
+  const song = loadSong(settings.songId);
   game.state = 'playing';
   game.tiles = [];
+  game.sparks = [];
   game.spawnIndex = 0;
   game.bgNoteIndex = 0;
   game.nextBeatIndex = 0;
@@ -806,12 +829,15 @@ function startGame() {
   game.speedMul = Number(settings.speed) || 1.0;
   game.tileFallSeconds = 2.0 / game.speedMul;
   game.lastTime = performance.now();
-  // Offset start so songT begins at -LEAD_IN_SECONDS
   game.songStart = game.lastTime + LEAD_IN_SECONDS * 1000;
   game.laneLastSpawn = [-1, -1, -1, -1];
   game.songTimeCursor = 0;
+  game.stats = newStats();
+  game.stats.totalTiles = game.songNotes.length;
+  game.currentSong = song;
+  activeHolds.clear();
   updateHud();
-  hide(menu); hide(gameOver); hide(startOverlay); hide(helpOverlay);
+  hide(menu); hide(gameOver); hide(startOverlay); hide(helpOverlay); hide(hofPanel);
   requestAnimationFrame(loop);
 }
 
@@ -904,6 +930,7 @@ function loop(t) {
       tile.missed = true;
       game.combo = 0;
       game.misses++;
+      if (game.stats) game.stats.missedTiles++;
       if (game.maxMisses > 0 && game.misses >= game.maxMisses) {
         endGame();
         return;
@@ -924,6 +951,7 @@ function loop(t) {
       const delta = Math.max(0, effective - (h.lastScoreT - h.startSongT));
       if (delta > 0) {
         game.score += Math.round(delta * 40); // 40 pts per held second
+        if (game.stats) game.stats.holdSeconds += delta;
       }
       h.lastScoreT = songT;
 
@@ -1154,6 +1182,7 @@ function vibrate(pattern) {
 function startHit(holdId, lane, x, y) {
   if (game.state !== 'playing') return;
   if (lane < 0 || lane >= LANES) return;
+  if (game.stats) game.stats.touches++;
   const songT = currentSongTime();
 
   // Find the closest unhit tile in this lane inside the hit window
@@ -1170,9 +1199,9 @@ function startHit(holdId, lane, x, y) {
   }
 
   if (!best) {
-    // Missed tap
     Audio.miss();
     vibrate([8, 30, 8]);
+    if (game.stats) game.stats.missedTaps++;
     game.combo = 0;
     game.misses++;
     if (game.maxMisses > 0 && game.misses >= game.maxMisses) endGame();
@@ -1186,6 +1215,10 @@ function startHit(holdId, lane, x, y) {
   let quality = 'good';
   if (offset < 0.08) quality = 'perfect';
   else if (offset < 0.2) quality = 'great';
+  if (game.stats) {
+    game.stats.hits++;
+    game.stats[quality]++;
+  }
   game.combo++;
   if (game.combo > game.maxCombo) game.maxCombo = game.combo;
   const base = quality === 'perfect' ? 30 : quality === 'great' ? 20 : 10;
@@ -1262,14 +1295,167 @@ function updateHud() {
   comboEl.textContent = parts.join('   ');
 }
 
+// ---------- Hall of Fame ----------
+const HOF_KEY = 'pianotiles-hof-v1';
+function loadHof() {
+  try { return JSON.parse(localStorage.getItem(HOF_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveHof(list) {
+  try { localStorage.setItem(HOF_KEY, JSON.stringify(list)); } catch {}
+}
+
+function rankFor(accuracy, misses, maxCombo, totalTiles) {
+  // S, A, B, C, D
+  if (misses === 0 && accuracy >= 0.95) return 'S';
+  if (accuracy >= 0.9) return 'A';
+  if (accuracy >= 0.75) return 'B';
+  if (accuracy >= 0.55) return 'C';
+  return 'D';
+}
+
 function endGame(finished = false) {
+  // Release any still-active holds
+  for (const id of [...activeHolds.keys()]) endHit(id);
   game.state = 'ended';
-  goTitle.textContent = finished ? 'Fertig!' : 'Game Over';
-  goScore.innerHTML = `<div style="text-align:center">
-    <div style="font-size:48px;font-weight:800">${game.score}</div>
-    <div style="opacity:0.7">Max Combo: ${game.maxCombo}</div>
-  </div>`;
+
+  const s = game.stats || newStats();
+  const durationMs = Date.now() - s.startTs;
+  const allAttempts = s.hits + s.missedTaps + s.missedTiles;
+  const accuracy = allAttempts > 0 ? s.hits / allAttempts : 0;
+  const song = game.currentSong || { title: '—', id: '' };
+  const rank = rankFor(accuracy, s.missedTiles + s.missedTaps, game.maxCombo, s.totalTiles);
+
+  const entry = {
+    ts: Date.now(),
+    songId: song.id,
+    songTitle: song.title,
+    finished,
+    score: game.score,
+    maxCombo: game.maxCombo,
+    hits: s.hits,
+    perfect: s.perfect,
+    great: s.great,
+    good: s.good,
+    missedTaps: s.missedTaps,
+    missedTiles: s.missedTiles,
+    touches: s.touches,
+    totalTiles: s.totalTiles,
+    accuracy,
+    holdSeconds: +s.holdSeconds.toFixed(2),
+    durationMs,
+    rank,
+    speed: game.speedMul,
+    loops: Number(settings.songLoops) || 1,
+  };
+
+  // Save to HoF (sorted by score desc, cap 100)
+  const list = loadHof();
+  list.push(entry);
+  list.sort((a, b) => b.score - a.score);
+  if (list.length > 100) list.length = 100;
+  saveHof(list);
+  const rankIndex = list.findIndex(e => e.ts === entry.ts) + 1;
+  const rankForSong = list.filter(e => e.songId === entry.songId).findIndex(e => e.ts === entry.ts) + 1;
+
+  renderGameOver(entry, finished, rankIndex, rankForSong);
   show(gameOver);
+}
+
+function renderGameOver(entry, finished, rankIndex, rankForSong) {
+  goTitle.textContent = finished ? '🎉 Fertig!' : 'Game Over';
+  document.getElementById('go-song').textContent = entry.songTitle;
+  document.getElementById('go-big-score').textContent = entry.score.toLocaleString('de-DE');
+
+  const rankBadge = `<span class="badge">Rang ${entry.rank}</span>`;
+  const placeBadge = rankIndex <= 3
+    ? `<span class="badge" style="background:linear-gradient(135deg,#ffd700,#ff9500);">#${rankIndex} ALL-TIME</span>`
+    : `<span class="badge" style="background:linear-gradient(135deg,#6fd1ff,#7a5cff);">#${rankIndex} Gesamt</span>`;
+  document.getElementById('go-rank').innerHTML = rankBadge + ' ' + placeBadge +
+    (rankForSong > 0 ? ` <span class="badge" style="background:rgba(255,255,255,0.15);color:#fff;">#${rankForSong} bei diesem Song</span>` : '');
+
+  document.getElementById('go-breakdown').innerHTML = `
+    <div class="seg perfect"><b>${entry.perfect}</b>Perfect</div>
+    <div class="seg great"><b>${entry.great}</b>Great</div>
+    <div class="seg good"><b>${entry.good}</b>Good</div>
+    <div class="seg miss"><b>${entry.missedTiles + entry.missedTaps}</b>Miss</div>
+  `;
+
+  const acc = Math.round(entry.accuracy * 100);
+  const perfectRate = entry.hits > 0 ? Math.round((entry.perfect / entry.hits) * 100) : 0;
+  const dur = formatDuration(entry.durationMs);
+
+  document.getElementById('go-stats-grid').innerHTML = `
+    ${statCard('Max Combo', 'x' + entry.maxCombo, Math.min(100, entry.maxCombo))}
+    ${statCard('Genauigkeit', acc + '%', acc)}
+    ${statCard('Hits / Touches', entry.hits + ' / ' + entry.touches, entry.touches ? (entry.hits / entry.touches) * 100 : 0)}
+    ${statCard('Perfect-Anteil', perfectRate + '%', perfectRate)}
+    ${statCard('Gehalten', entry.holdSeconds.toFixed(1) + ' s', Math.min(100, entry.holdSeconds * 4))}
+    ${statCard('Dauer', dur, 0, true)}
+  `;
+}
+
+function statCard(label, value, pct, noBar) {
+  return `<div class="stat-card">
+    <div class="label">${label}</div>
+    <div class="value">${value}</div>
+    ${noBar ? '' : `<div class="bar"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`}
+  </div>`;
+}
+
+function formatDuration(ms) {
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return m + ':' + String(rem).padStart(2, '0');
+}
+
+function renderHof() {
+  const list = loadHof();
+  const filter = hofFilter.value;
+  const filtered = filter ? list.filter(e => e.songId === filter) : list;
+  const container = document.getElementById('hof-list');
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="hof-empty">Noch keine Einträge – spiel einen Song, um die Hall of Fame zu füllen!</div>';
+    return;
+  }
+  container.innerHTML = filtered.slice(0, 50).map((e, i) => {
+    const rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    const acc = Math.round(e.accuracy * 100);
+    const when = new Date(e.ts).toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: '2-digit' });
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+    return `<div class="hof-row ${rankCls}">
+      <div class="rank">${medal}</div>
+      <div class="meta">
+        <div class="title">${escapeHtml(e.songTitle)}</div>
+        <div class="sub">
+          <span>Rang ${e.rank}</span>
+          <span>${acc}% Genauigkeit</span>
+          <span>x${e.maxCombo} Combo</span>
+          <span>${e.perfect}P / ${e.great}G</span>
+          <span>${when}</span>
+        </div>
+      </div>
+      <div class="score-col">
+        <div class="big">${e.score.toLocaleString('de-DE')}</div>
+        <div class="small">Punkte</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function populateHofFilter() {
+  const list = loadHof();
+  const ids = [...new Set(list.map(e => e.songId))];
+  hofFilter.innerHTML = '<option value="">Alle Songs</option>' +
+    ids.map(id => {
+      const title = (list.find(e => e.songId === id) || {}).songTitle || id;
+      return `<option value="${escapeHtml(id)}">${escapeHtml(title)}</option>`;
+    }).join('');
 }
 
 // ---------- Input ----------
@@ -1367,6 +1553,23 @@ liveHueInput.addEventListener('input', () => {
 
 helpBtn.addEventListener('click', () => show(helpOverlay));
 closeHelpBtn.addEventListener('click', () => hide(helpOverlay));
+
+function openHallOfFame() {
+  populateHofFilter();
+  renderHof();
+  show(hofPanel);
+}
+openHof.addEventListener('click', openHallOfFame);
+hofFromGo.addEventListener('click', () => { hide(gameOver); openHallOfFame(); });
+hofClose.addEventListener('click', () => hide(hofPanel));
+hofFilter.addEventListener('change', renderHof);
+hofClear.addEventListener('click', () => {
+  if (confirm('Wirklich alle Einträge löschen?')) {
+    saveHof([]);
+    populateHofFilter();
+    renderHof();
+  }
+});
 
 // ---------- Init ----------
 function init() {

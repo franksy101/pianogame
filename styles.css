@@ -298,3 +298,186 @@ body.live-bg .bg-slot { opacity: 0 !important; }
   from { opacity: 1; transform: translate(-50%, 0) scale(1); }
   to { opacity: 0; transform: translate(-50%, -60px) scale(1.15); }
 }
+
+/* ---- Game-over screen ---- */
+.go-song {
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.7;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#go-big-score {
+  text-align: center;
+  font-size: 88px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  line-height: 1;
+  margin: 10px 0 6px;
+  background: linear-gradient(135deg, var(--accent), #ff6ad5 60%, #7a5cff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 40px rgba(0,229,255,0.25);
+}
+.go-rank {
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.85;
+  margin-bottom: 14px;
+}
+.go-rank .badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffd15a, #ff6a45);
+  color: #1a0e00;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  margin-left: 6px;
+}
+.go-breakdown {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.go-breakdown .seg {
+  flex: 1;
+  text-align: center;
+  padding: 8px 4px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.go-breakdown .seg b { display: block; font-size: 20px; font-weight: 800; }
+.go-breakdown .seg.perfect { background: rgba(255,224,102,0.18); color: #ffe066; }
+.go-breakdown .seg.great { background: rgba(157,255,112,0.14); color: #9dff70; }
+.go-breakdown .seg.good { background: rgba(0,229,255,0.14); color: var(--accent); }
+.go-breakdown .seg.miss { background: rgba(255,80,80,0.14); color: #ff8080; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.stat-card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.stat-card .label {
+  font-size: 11px;
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.stat-card .value {
+  font-size: 20px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.stat-card .bar {
+  margin-top: 6px;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.stat-card .bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #ff6ad5);
+  transition: width 0.8s ease-out;
+}
+
+/* ---- Hall of Fame ---- */
+.hof-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.hof-controls select { flex: 1; }
+button.tiny {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+#hof-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.hof-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+}
+.hof-row.gold { border-color: rgba(255,215,0,0.6); background: linear-gradient(135deg, rgba(255,215,0,0.12), rgba(255,215,0,0.02)); }
+.hof-row.silver { border-color: rgba(200,210,230,0.45); background: linear-gradient(135deg, rgba(200,210,230,0.10), rgba(200,210,230,0.02)); }
+.hof-row.bronze { border-color: rgba(205,127,50,0.5); background: linear-gradient(135deg, rgba(205,127,50,0.12), rgba(205,127,50,0.02)); }
+.hof-row .rank {
+  font-size: 22px;
+  font-weight: 900;
+  text-align: center;
+  opacity: 0.9;
+}
+.hof-row.gold .rank,
+.hof-row.silver .rank,
+.hof-row.bronze .rank { font-size: 26px; }
+.hof-row .meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hof-row .title {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hof-row .sub {
+  font-size: 11px;
+  opacity: 0.7;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hof-row .sub span::before { content: '·  '; opacity: 0.4; }
+.hof-row .sub span:first-child::before { content: ''; }
+.hof-row .score-col {
+  text-align: right;
+}
+.hof-row .score-col .big {
+  font-weight: 900;
+  font-size: 22px;
+  background: linear-gradient(135deg, var(--accent), #ff6ad5);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hof-row .score-col .small {
+  font-size: 10px;
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.hof-empty {
+  text-align: center;
+  opacity: 0.65;
+  padding: 30px 10px;
+  font-size: 14px;
+}
