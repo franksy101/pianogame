@@ -43,6 +43,25 @@ const Audio = {
   init() {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // iOS Safari starts the context suspended; resume on first user gesture.
+    if (this.ctx.state === 'suspended') {
+      const resume = () => {
+        this.ctx.resume();
+        document.removeEventListener('touchstart', resume);
+        document.removeEventListener('pointerdown', resume);
+      };
+      document.addEventListener('touchstart', resume, { once: true });
+      document.addEventListener('pointerdown', resume, { once: true });
+      this.ctx.resume().catch(() => {});
+    }
+    // Play a silent sample to force iOS to unlock the audio pipeline.
+    try {
+      const buf = this.ctx.createBuffer(1, 1, 22050);
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.ctx.destination);
+      src.start(0);
+    } catch (_) {}
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.6;
     // Insert analyser for visualizer: master -> analyser -> destination
@@ -1173,10 +1192,28 @@ function roundRect(ctx, x, y, w, h, r) {
 // state: { lane, tile, audio, x, y, startSongT, lastScoreT, lastVibT, lastSparkT, endsAt }
 const activeHolds = new Map();
 
+// iOS Safari does not expose navigator.vibrate and has no JS API for the
+// Taptic Engine. Detect capability once; on unsupported platforms fall back
+// to a short visual pulse so players still get a confirmation cue.
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const HAS_VIBRATE = !IS_IOS && typeof navigator.vibrate === 'function';
+let lastHapticFallback = 0;
+
 function vibrate(pattern) {
-  if (navigator.vibrate) {
+  if (HAS_VIBRATE) {
     try { navigator.vibrate(pattern); } catch (_) {}
+    return;
   }
+  // Fallback: visual pulse, but throttled so continuous holds don't over-animate
+  const now = performance.now();
+  if (now - lastHapticFallback < 90) return;
+  lastHapticFallback = now;
+  const el = comboEl;
+  if (!el) return;
+  el.classList.remove('haptic-pulse');
+  void el.offsetWidth;
+  el.classList.add('haptic-pulse');
 }
 
 function startHit(holdId, lane, x, y) {
