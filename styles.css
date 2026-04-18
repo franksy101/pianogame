@@ -73,6 +73,17 @@ body {
   pointer-events: none;
 }
 
+#visual-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  pointer-events: none;
+}
+#visual-canvas.on { display: block; }
+body.live-bg .bg-slot { opacity: 0 !important; }
+
 /* Game canvas */
 #game-canvas {
   position: absolute;

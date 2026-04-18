@@ -45,13 +45,19 @@ const Audio = {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.6;
-    this.master.connect(this.ctx.destination);
+    // Insert analyser for visualizer: master -> analyser -> destination
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.78;
+    this.master.connect(this.analyser);
+    this.analyser.connect(this.ctx.destination);
     this.bgGain = this.ctx.createGain();
     this.bgGain.gain.value = 0.35;
     this.bgGain.connect(this.master);
     this.beatGain = this.ctx.createGain();
     this.beatGain.gain.value = 0.5;
     this.beatGain.connect(this.master);
+    Visualizer.bindAnalyser(this.analyser);
   },
   // A crisp, louder note (used for user hits)
   playNote(midi, duration = 0.6) {
@@ -166,6 +172,303 @@ const Audio = {
   },
 };
 
+// ---------- Visualizer (generative, music-reactive background) ----------
+const Visualizer = {
+  canvas: null,
+  ctx: null,
+  analyser: null,
+  freq: null,
+  time: null,
+  enabled: false,
+  mode: 'waves',
+  hue: 200,
+  accentRgb: [0, 229, 255],
+  particles: null,
+  plasmaBuf: null,
+  plasmaCanvas: null,
+  W: 0, H: 0, dpr: 1,
+  t0: 0,
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.resize();
+    this.t0 = performance.now();
+    requestAnimationFrame(this.loop.bind(this));
+    window.addEventListener('resize', () => this.resize());
+  },
+  bindAnalyser(an) {
+    this.analyser = an;
+    this.freq = new Uint8Array(an.frequencyBinCount);
+    this.time = new Uint8Array(an.frequencyBinCount);
+  },
+  resize() {
+    this.dpr = window.devicePixelRatio || 1;
+    this.W = window.innerWidth;
+    this.H = window.innerHeight;
+    this.canvas.width = this.W * this.dpr;
+    this.canvas.height = this.H * this.dpr;
+    this.canvas.style.width = this.W + 'px';
+    this.canvas.style.height = this.H + 'px';
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.plasmaBuf = null; // force rebuild
+  },
+  setAccent(hex) {
+    const h = hex.replace('#', '');
+    this.accentRgb = [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+    ];
+  },
+  setEnabled(on) {
+    this.enabled = on;
+    this.canvas.classList.toggle('on', on);
+    document.body.classList.toggle('live-bg', on);
+  },
+  setMode(mode) {
+    this.mode = mode;
+    this.particles = null; // rebuild if needed
+  },
+  bands() {
+    // Compute bass/mid/treble/overall energy in [0..1]
+    if (!this.freq) return { bass: 0, mid: 0, treble: 0, avg: 0 };
+    const len = this.freq.length;
+    let b = 0, m = 0, tr = 0, all = 0;
+    const bEnd = Math.floor(len * 0.08);
+    const mEnd = Math.floor(len * 0.35);
+    for (let i = 0; i < len; i++) {
+      const v = this.freq[i];
+      all += v;
+      if (i < bEnd) b += v;
+      else if (i < mEnd) m += v;
+      else tr += v;
+    }
+    return {
+      bass: (b / Math.max(1, bEnd)) / 255,
+      mid: (m / Math.max(1, mEnd - bEnd)) / 255,
+      treble: (tr / Math.max(1, len - mEnd)) / 255,
+      avg: (all / len) / 255,
+    };
+  },
+  loop(t) {
+    requestAnimationFrame(this.loop.bind(this));
+    if (!this.enabled) return;
+    if (this.analyser) {
+      this.analyser.getByteFrequencyData(this.freq);
+      this.analyser.getByteTimeDomainData(this.time);
+    }
+    this.render((t - this.t0) / 1000);
+  },
+  render(tSec) {
+    const fn = this['render_' + this.mode] || this.render_waves;
+    fn.call(this, tSec);
+  },
+
+  render_waves(t) {
+    const { W, H, ctx } = this;
+    const b = this.bands();
+    ctx.fillStyle = 'rgba(8, 10, 20, 0.22)';
+    ctx.fillRect(0, 0, W, H);
+    const [R, G, B] = this.accentRgb;
+    const layers = 5;
+    for (let l = 0; l < layers; l++) {
+      const phase = t * (0.6 + l * 0.25) + l;
+      const amp = 22 + l * 14 + b.bass * 110;
+      const yBase = H * (0.28 + l * 0.12);
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 6) {
+        const y = yBase
+          + Math.sin(x * 0.008 + phase) * amp
+          + Math.sin(x * 0.021 + phase * 1.7) * amp * 0.4
+          + (this.time ? (this.time[x % this.time.length] - 128) * 0.5 * (0.3 + b.mid) : 0);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+      const a = 0.12 + l * 0.06 + b.avg * 0.25;
+      const grad = ctx.createLinearGradient(0, yBase - amp, 0, H);
+      grad.addColorStop(0, `rgba(${R},${G},${B},${a})`);
+      grad.addColorStop(1, `rgba(${R * 0.3},${G * 0.3},${B * 0.5},0)`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  },
+
+  render_pixels(t) {
+    const { W, H, ctx } = this;
+    const b = this.bands();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+    ctx.fillRect(0, 0, W, H);
+    const cell = 24;
+    const cols = Math.ceil(W / cell);
+    const rows = Math.ceil(H / cell);
+    const [R, G, B] = this.accentRgb;
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        const freqIdx = ((i + j * 3) * 7) % (this.freq ? this.freq.length : 1);
+        const v = this.freq ? this.freq[freqIdx] / 255 : 0;
+        const noise = Math.sin(i * 0.4 + t * 1.1) * Math.cos(j * 0.35 - t * 0.9);
+        const lvl = Math.max(0, v * 0.9 + noise * 0.25 + b.bass * 0.4);
+        if (lvl < 0.15) continue;
+        const a = Math.min(1, lvl);
+        ctx.fillStyle = `rgba(${R},${G},${B},${a * 0.8})`;
+        const s = cell - 2;
+        ctx.fillRect(i * cell + 1, j * cell + 1, s, s);
+      }
+    }
+  },
+
+  render_sphere(t) {
+    const { W, H, ctx } = this;
+    const b = this.bands();
+    ctx.fillStyle = 'rgba(6, 8, 20, 0.28)';
+    ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    const baseR = Math.min(W, H) * 0.18 * (1 + b.bass * 0.5);
+    const [R, G, B] = this.accentRgb;
+    const bins = this.freq ? this.freq.length : 0;
+    const bars = 128;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < bars; i++) {
+      const idx = Math.floor((i / bars) * bins * 0.6);
+      const v = this.freq ? this.freq[idx] / 255 : 0;
+      const angle = (i / bars) * Math.PI * 2 + t * 0.2;
+      const r1 = baseR;
+      const r2 = baseR + 10 + v * Math.min(W, H) * 0.22;
+      const x1 = cx + Math.cos(angle) * r1;
+      const y1 = cy + Math.sin(angle) * r1;
+      const x2 = cx + Math.cos(angle) * r2;
+      const y2 = cy + Math.sin(angle) * r2;
+      const a = 0.35 + v * 0.65;
+      ctx.strokeStyle = `rgba(${R},${G},${B},${a})`;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    // Inner glow
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR);
+    grad.addColorStop(0, `rgba(${R},${G},${B},${0.35 + b.avg * 0.4})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  },
+
+  render_plasma(t) {
+    const { ctx, W, H } = this;
+    // Render small buffer, scale up for smoothness + perf
+    const bw = 160, bh = 90;
+    if (!this.plasmaBuf) {
+      this.plasmaCanvas = document.createElement('canvas');
+      this.plasmaCanvas.width = bw;
+      this.plasmaCanvas.height = bh;
+      this.plasmaBuf = this.plasmaCanvas.getContext('2d').createImageData(bw, bh);
+    }
+    const img = this.plasmaBuf;
+    const data = img.data;
+    const b = this.bands();
+    const speed = 0.8 + b.bass * 2.0;
+    const [R0, G0, B0] = this.accentRgb;
+    for (let y = 0; y < bh; y++) {
+      for (let x = 0; x < bw; x++) {
+        const v =
+          Math.sin(x * 0.08 + t * speed) +
+          Math.sin(y * 0.1 + t * speed * 0.7) +
+          Math.sin((x + y) * 0.06 + t * 0.5) +
+          Math.sin(Math.hypot(x - bw / 2, y - bh / 2) * 0.12 - t * speed);
+        const n = (v + 4) / 8; // 0..1
+        const idx = (y * bw + x) * 4;
+        data[idx]     = Math.min(255, R0 * n + 30 * (1 - n));
+        data[idx + 1] = Math.min(255, G0 * n * 0.9 + 20 * (1 - n));
+        data[idx + 2] = Math.min(255, B0 * (0.5 + n * 0.6));
+        data[idx + 3] = 255;
+      }
+    }
+    this.plasmaCanvas.getContext('2d').putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.plasmaCanvas, 0, 0, W, H);
+    // Darken overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(0, 0, W, H);
+  },
+
+  render_particles(t) {
+    const { ctx, W, H } = this;
+    const b = this.bands();
+    if (!this.particles) {
+      this.particles = [];
+      const N = 140;
+      for (let i = 0; i < N; i++) {
+        this.particles.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          vx: (Math.random() - 0.5) * 40,
+          vy: (Math.random() - 0.5) * 40,
+          r: 1 + Math.random() * 3,
+        });
+      }
+    }
+    ctx.fillStyle = 'rgba(5, 7, 18, 0.25)';
+    ctx.fillRect(0, 0, W, H);
+    const [R, G, B] = this.accentRgb;
+    const push = 1 + b.bass * 4;
+    const cx = W / 2, cy = H / 2;
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of this.particles) {
+      // Attract toward centre with bass pulse
+      const dx = cx - p.x, dy = cy - p.y;
+      const d = Math.hypot(dx, dy) + 0.001;
+      p.vx += (dx / d) * (1.5 - b.bass * 3);
+      p.vy += (dy / d) * (1.5 - b.bass * 3);
+      p.vx += (Math.random() - 0.5) * 2;
+      p.vy += (Math.random() - 0.5) * 2;
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.x += p.vx * 0.05 * push;
+      p.y += p.vy * 0.05 * push;
+      if (p.x < 0) p.x += W; if (p.x > W) p.x -= W;
+      if (p.y < 0) p.y += H; if (p.y > H) p.y -= H;
+      const rad = p.r * (1 + b.avg * 2);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 6);
+      g.addColorStop(0, `rgba(${R},${G},${B},${0.6 + b.treble * 0.4})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  },
+
+  render_tunnel(t) {
+    const { ctx, W, H } = this;
+    const b = this.bands();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    const rings = 18;
+    const [R, G, B] = this.accentRgb;
+    for (let i = 0; i < rings; i++) {
+      const p = ((i / rings) + (t * (0.15 + b.bass * 0.3)) % 1) % 1;
+      const r = p * Math.max(W, H) * 0.9;
+      const a = (1 - p) * (0.25 + b.avg * 0.6);
+      ctx.strokeStyle = `rgba(${R},${G},${B},${a})`;
+      ctx.lineWidth = 2 + b.bass * 6;
+      ctx.beginPath();
+      const sides = 32;
+      for (let s = 0; s <= sides; s++) {
+        const ang = (s / sides) * Math.PI * 2 + t * 0.4 + i * 0.05;
+        const wobble = 1 + Math.sin(ang * 3 + t * 2) * 0.06 * (1 + b.treble);
+        const x = cx + Math.cos(ang) * r * wobble;
+        const y = cy + Math.sin(ang) * r * wobble;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  },
+};
+
 // ---------- DOM refs ----------
 const canvas = document.getElementById('game-canvas');
 const ctx2d = canvas.getContext('2d');
@@ -195,6 +498,10 @@ const tileColor = document.getElementById('tile-color');
 const tileGlow = document.getElementById('tile-glow');
 const maxMissesSelect = document.getElementById('max-misses');
 const songLoopsSelect = document.getElementById('song-loops');
+const liveBgCheck = document.getElementById('live-bg');
+const liveModeSelect = document.getElementById('live-mode');
+const liveHueInput = document.getElementById('live-hue-color');
+const visualCanvas = document.getElementById('visual-canvas');
 const helpBtn = document.getElementById('help-btn');
 const helpOverlay = document.getElementById('help-overlay');
 const closeHelpBtn = document.getElementById('close-help');
@@ -227,6 +534,9 @@ const settings = Object.assign({
   tileGlow: '#00e5ff',
   maxMisses: 3, // 0 = unlimited
   songLoops: 2, // repeat song N times for longer playtime
+  liveBg: false,
+  liveMode: 'waves',
+  liveHue: '#00e5ff',
 }, loadSettings());
 
 let customBgs = loadCustomBgs();
@@ -819,6 +1129,22 @@ songLoopsSelect.addEventListener('change', () => {
   settings.songLoops = Number(songLoopsSelect.value) || 1;
   saveSettings();
 });
+liveBgCheck.addEventListener('change', () => {
+  settings.liveBg = liveBgCheck.checked;
+  saveSettings();
+  Visualizer.setEnabled(settings.liveBg);
+  if (settings.liveBg) Audio.init();
+});
+liveModeSelect.addEventListener('change', () => {
+  settings.liveMode = liveModeSelect.value;
+  saveSettings();
+  Visualizer.setMode(settings.liveMode);
+});
+liveHueInput.addEventListener('input', () => {
+  settings.liveHue = liveHueInput.value;
+  saveSettings();
+  Visualizer.setAccent(settings.liveHue);
+});
 
 helpBtn.addEventListener('click', () => show(helpOverlay));
 closeHelpBtn.addEventListener('click', () => hide(helpOverlay));
@@ -837,7 +1163,15 @@ function init() {
   tileGlow.value = settings.tileGlow;
   maxMissesSelect.value = String(settings.maxMisses);
   songLoopsSelect.value = String(settings.songLoops);
+  liveBgCheck.checked = !!settings.liveBg;
+  liveModeSelect.value = settings.liveMode;
+  liveHueInput.value = settings.liveHue;
   applyCssVars();
+
+  Visualizer.init(visualCanvas);
+  Visualizer.setAccent(settings.liveHue);
+  Visualizer.setMode(settings.liveMode);
+  Visualizer.setEnabled(!!settings.liveBg);
 
   const bg = findBg(settings.bgId) || PRESET_BGS[0];
   // First paint: no animation

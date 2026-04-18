@@ -12,6 +12,7 @@
   <div id="background-layer">
     <div class="bg-slot" id="bg-a"></div>
     <div class="bg-slot" id="bg-b"></div>
+    <canvas id="visual-canvas"></canvas>
     <div id="bg-overlay"></div>
   </div>
 
@@ -63,6 +64,28 @@
       <label class="upload">
         Eigenes Bild hochladen
         <input type="file" id="bg-upload" accept="image/*" multiple hidden />
+      </label>
+    </section>
+
+    <section>
+      <h2>Live-Visualizer</h2>
+      <label class="row">
+        <input type="checkbox" id="live-bg" />
+        Animierten, musikreaktiven Hintergrund verwenden
+      </label>
+      <label class="row">
+        Modus:
+        <select id="live-mode">
+          <option value="waves">Wellen</option>
+          <option value="pixels">Pixel-Raster</option>
+          <option value="sphere">Sphäre / Spektrum</option>
+          <option value="plasma">Plasma</option>
+          <option value="particles">Partikel</option>
+          <option value="tunnel">Tunnel</option>
+        </select>
+      </label>
+      <label class="row">
+        Basisfarbe: <input type="color" id="live-hue-color" value="#00e5ff" />
       </label>
     </section>
 
