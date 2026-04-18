@@ -1,0 +1,251 @@
+:root {
+  --tile-color: #111111;
+  --tile-glow: #00e5ff;
+  --ui-bg: rgba(15, 17, 26, 0.85);
+  --ui-fg: #f4f6fb;
+  --accent: #00e5ff;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #000;
+  color: var(--ui-fg);
+  overflow: hidden;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Backgrounds */
+#background-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.bg-slot {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-color: #1a1a2e;
+  transition: opacity 1.2s ease, transform 1.2s ease, filter 1.2s ease;
+  opacity: 0;
+  will-change: opacity, transform, filter;
+}
+.bg-slot.active { opacity: 1; }
+
+/* Morph variants applied to the OUTGOING slot */
+.bg-slot.morph-out-fade { opacity: 0; }
+.bg-slot.morph-out-slide { transform: translateX(-100%); opacity: 0; }
+.bg-slot.morph-out-zoom { transform: scale(1.6); opacity: 0; filter: blur(12px); }
+.bg-slot.morph-out-pixelate { filter: contrast(2) saturate(2) blur(0); opacity: 0; transform: scale(1.05); image-rendering: pixelated; }
+.bg-slot.morph-out-blur { filter: blur(40px); opacity: 0; }
+.bg-slot.morph-out-rotate { transform: rotate(12deg) scale(1.2); opacity: 0; filter: blur(6px); }
+.bg-slot.morph-out-wave { filter: hue-rotate(180deg) saturate(2); opacity: 0; transform: scale(1.1) skewY(6deg); }
+
+/* Incoming animations */
+.bg-slot.morph-in-slide { transform: translateX(100%); }
+.bg-slot.morph-in-slide.active { transform: translateX(0); }
+.bg-slot.morph-in-zoom { transform: scale(0.6); filter: blur(10px); }
+.bg-slot.morph-in-zoom.active { transform: scale(1); filter: blur(0); }
+.bg-slot.morph-in-rotate { transform: rotate(-10deg) scale(0.9); filter: blur(6px); }
+.bg-slot.morph-in-rotate.active { transform: rotate(0) scale(1); filter: blur(0); }
+.bg-slot.morph-in-pixelate { filter: blur(20px) contrast(1.5); }
+.bg-slot.morph-in-pixelate.active { filter: blur(0) contrast(1); }
+.bg-slot.morph-in-blur { filter: blur(40px); }
+.bg-slot.morph-in-blur.active { filter: blur(0); }
+.bg-slot.morph-in-wave { filter: hue-rotate(-180deg) saturate(0.3); transform: skewY(-6deg) scale(1.1); }
+.bg-slot.morph-in-wave.active { filter: hue-rotate(0) saturate(1); transform: skewY(0) scale(1); }
+
+#bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.35), rgba(0,0,0,0.55));
+  pointer-events: none;
+}
+
+/* Game canvas */
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  display: block;
+}
+
+/* HUD */
+#hud {
+  position: absolute;
+  top: 16px;
+  left: 0; right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+}
+#score {
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+#combo {
+  font-size: 20px;
+  opacity: 0.85;
+  margin-top: 4px;
+  min-height: 24px;
+}
+#song-title {
+  font-size: 14px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+/* Menu button */
+.icon-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: var(--ui-bg);
+  color: var(--ui-fg);
+  font-size: 22px;
+  cursor: pointer;
+  z-index: 3;
+  backdrop-filter: blur(10px);
+}
+
+/* Panels */
+.panel {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  max-width: 560px;
+  margin: auto;
+  height: 100%;
+}
+.panel.hidden { display: none; }
+.panel h1 { margin: 6px 0 10px; font-size: 28px; text-align: center; }
+.panel h2 { margin: 8px 0 6px; font-size: 16px; opacity: 0.85; }
+.panel section { display: flex; flex-direction: column; gap: 8px; }
+.panel select, .panel input[type="number"], .panel button {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: var(--ui-fg);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.panel button {
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), #7a5cff);
+  color: #0b0b12;
+  font-weight: 700;
+  border: none;
+}
+.panel button.secondary {
+  background: rgba(255,255,255,0.08);
+  color: var(--ui-fg);
+}
+.panel label.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.panel label.upload {
+  display: inline-block;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255,255,255,0.3);
+  cursor: pointer;
+  font-size: 14px;
+}
+.panel .buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.panel .buttons button { flex: 1; }
+
+#start-overlay { justify-content: center; text-align: center; }
+#start-overlay p { opacity: 0.8; }
+
+/* Background grid */
+#bg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+.bg-thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  border: 2px solid transparent;
+  cursor: pointer;
+  overflow: hidden;
+}
+.bg-thumb.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,229,255,0.3); }
+.bg-thumb .del {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  display: none;
+}
+.bg-thumb.custom:hover .del { display: block; }
+.bg-thumb .label {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 3px 6px;
+  font-size: 11px;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  text-align: center;
+}
+
+#speed-range { width: 100%; }
+#speed-value { font-size: 13px; opacity: 0.7; }
+
+/* Hit flash */
+.hit-flash {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.7), transparent 60%);
+  z-index: 2;
+  animation: flash 0.35s ease-out forwards;
+}
+@keyframes flash {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(0.4); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
+}

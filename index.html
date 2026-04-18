@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Piano Tiles - Custom</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <div id="background-layer">
+    <div class="bg-slot" id="bg-a"></div>
+    <div class="bg-slot" id="bg-b"></div>
+    <div id="bg-overlay"></div>
+  </div>
+
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud">
+    <div id="score">0</div>
+    <div id="combo"></div>
+    <div id="song-title"></div>
+  </div>
+
+  <button id="menu-btn" class="icon-btn" title="Menü">☰</button>
+
+  <div id="menu" class="panel hidden">
+    <h1>Piano Tiles</h1>
+
+    <section>
+      <h2>Song</h2>
+      <select id="song-select"></select>
+    </section>
+
+    <section>
+      <h2>Geschwindigkeit</h2>
+      <input type="range" id="speed-range" min="0.5" max="2.5" step="0.1" value="1.0" />
+      <span id="speed-value">1.0x</span>
+    </section>
+
+    <section>
+      <h2>Hintergrund</h2>
+      <div id="bg-grid"></div>
+      <label class="upload">
+        Eigenes Bild hochladen
+        <input type="file" id="bg-upload" accept="image/*" multiple hidden />
+      </label>
+    </section>
+
+    <section>
+      <h2>Morph-Effekt</h2>
+      <select id="morph-select">
+        <option value="fade">Fade</option>
+        <option value="slide">Slide</option>
+        <option value="zoom">Zoom</option>
+        <option value="pixelate">Pixelate</option>
+        <option value="blur">Blur</option>
+        <option value="rotate">Rotate</option>
+        <option value="wave">Wave</option>
+        <option value="none">Ohne</option>
+      </select>
+      <label class="row">
+        <input type="checkbox" id="auto-morph" checked />
+        Hintergrund automatisch wechseln
+      </label>
+      <label class="row">
+        Intervall:
+        <input type="number" id="morph-interval" min="2" max="60" value="8" /> s
+      </label>
+    </section>
+
+    <section>
+      <h2>Tiles</h2>
+      <label class="row">Farbe: <input type="color" id="tile-color" value="#111111" /></label>
+      <label class="row">Glow: <input type="color" id="tile-glow" value="#00e5ff" /></label>
+    </section>
+
+    <div class="buttons">
+      <button id="start-btn">Spielen</button>
+      <button id="close-menu">Schließen</button>
+    </div>
+  </div>
+
+  <div id="game-over" class="panel hidden">
+    <h1 id="go-title">Game Over</h1>
+    <div id="go-score"></div>
+    <div class="buttons">
+      <button id="retry-btn">Nochmal</button>
+      <button id="back-menu-btn">Menü</button>
+    </div>
+  </div>
+
+  <div id="start-overlay" class="panel">
+    <h1>Piano Tiles</h1>
+    <p>Tippe die schwarzen Kacheln im Takt!</p>
+    <button id="first-start">Start</button>
+  </div>
+
+</div>
+
+<script src="songs.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
