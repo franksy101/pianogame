@@ -38,13 +38,22 @@ const PRESET_BGS = [
 const Audio = {
   ctx: null,
   master: null,
+  bgGain: null,
+  beatGain: null,
   init() {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.6;
     this.master.connect(this.ctx.destination);
+    this.bgGain = this.ctx.createGain();
+    this.bgGain.gain.value = 0.35;
+    this.bgGain.connect(this.master);
+    this.beatGain = this.ctx.createGain();
+    this.beatGain.gain.value = 0.5;
+    this.beatGain.connect(this.master);
   },
+  // A crisp, louder note (used for user hits)
   playNote(midi, duration = 0.6) {
     if (!this.ctx) return;
     const ctx = this.ctx;
@@ -75,6 +84,71 @@ const Audio = {
       osc.start(now);
       osc.stop(end + 0.05);
     });
+  },
+  // A soft, mellow "guide" note played automatically in the background so the
+  // melody always runs. A clean user hit layers on top and sounds good.
+  playBgNote(midi, whenOffset = 0, duration = 0.5) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    const start = ctx.currentTime + Math.max(0, whenOffset);
+    const end = start + duration;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.22, start + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, end);
+    gain.connect(this.bgGain);
+
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'sine';
+    osc1.frequency.value = freq;
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = freq * 2;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0.25;
+    osc1.connect(gain);
+    osc2.connect(g2).connect(gain);
+    osc1.start(start); osc1.stop(end + 0.05);
+    osc2.start(start); osc2.stop(end + 0.05);
+  },
+  // A subtle bass note on beat 1 of each bar
+  playBass(midi, whenOffset = 0, duration = 0.8) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    const start = ctx.currentTime + Math.max(0, whenOffset);
+    const end = start + duration;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.32, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, end);
+    gain.connect(this.beatGain);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    osc.connect(gain);
+    osc.start(start); osc.stop(end + 0.05);
+  },
+  // Short "tick" for every beat
+  playTick(whenOffset = 0, strong = false) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const start = ctx.currentTime + Math.max(0, whenOffset);
+    const end = start + 0.08;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(strong ? 0.18 : 0.08, start);
+    gain.gain.exponentialRampToValueAtTime(0.001, end);
+    gain.connect(this.beatGain);
+
+    const osc = ctx.createOscillator();
+    osc.type = strong ? 'square' : 'triangle';
+    osc.frequency.value = strong ? 160 : 1800;
+    osc.connect(gain);
+    osc.start(start); osc.stop(end + 0.02);
   },
   miss() {
     if (!this.ctx) return;
@@ -120,6 +194,7 @@ const morphInterval = document.getElementById('morph-interval');
 const tileColor = document.getElementById('tile-color');
 const tileGlow = document.getElementById('tile-glow');
 const maxMissesSelect = document.getElementById('max-misses');
+const songLoopsSelect = document.getElementById('song-loops');
 const helpBtn = document.getElementById('help-btn');
 const helpOverlay = document.getElementById('help-overlay');
 const closeHelpBtn = document.getElementById('close-help');
@@ -151,6 +226,7 @@ const settings = Object.assign({
   tileColor: '#111111',
   tileGlow: '#00e5ff',
   maxMisses: 3, // 0 = unlimited
+  songLoops: 2, // repeat song N times for longer playtime
 }, loadSettings());
 
 let customBgs = loadCustomBgs();
@@ -348,11 +424,19 @@ const game = {
   tileFallSeconds: 2.0,
 };
 
+const LEAD_IN_SECONDS = 3.0; // countdown before first tile reaches hit line
+const SONG_LOOPS = 2;         // repeat each song to extend playtime
+const HIT_EARLY = 0.9;        // how far BEFORE the line a hit is accepted (s)
+const HIT_LATE = 0.22;        // how far AFTER the line a hit is still counted
+
 function loadSong(songId) {
   const s = SONGS.find(x => x.id === songId) || SONGS[0];
-  game.songNotes = s.notes.slice();
+  const loops = Math.max(1, Number(settings.songLoops) || SONG_LOOPS);
+  const notes = [];
+  for (let i = 0; i < loops; i++) notes.push(...s.notes);
+  game.songNotes = notes;
   game.bpm = s.bpm;
-  songTitleEl.textContent = s.title;
+  songTitleEl.textContent = s.title + (loops > 1 ? `  ·  ${loops}×` : '');
   return s;
 }
 
@@ -362,6 +446,8 @@ function startGame() {
   game.state = 'playing';
   game.tiles = [];
   game.spawnIndex = 0;
+  game.bgNoteIndex = 0;
+  game.nextBeatIndex = 0;
   game.score = 0;
   game.combo = 0;
   game.maxCombo = 0;
@@ -370,10 +456,12 @@ function startGame() {
   game.speedMul = Number(settings.speed) || 1.0;
   game.tileFallSeconds = 2.0 / game.speedMul;
   game.lastTime = performance.now();
-  game.songStart = game.lastTime;
+  // Offset start so songT begins at -LEAD_IN_SECONDS
+  game.songStart = game.lastTime + LEAD_IN_SECONDS * 1000;
   game.laneLastSpawn = [-1, -1, -1, -1];
+  game.songTimeCursor = 0;
   updateHud();
-  hide(menu); hide(gameOver); hide(startOverlay);
+  hide(menu); hide(gameOver); hide(startOverlay); hide(helpOverlay);
   requestAnimationFrame(loop);
 }
 
@@ -416,21 +504,56 @@ function loop(t) {
   const dt = (t - game.lastTime) / 1000;
   game.lastTime = t;
   const songT = currentSongTime();
+  const beatSeconds = 60 / game.bpm / game.speedMul;
 
-  // Lazy-spawn tiles up to songT + tileFallSeconds + 1
-  if (game.spawnIndex === 0) game.songTimeCursor = 0;
+  // Spawn tiles ahead so the first one reaches the hit line at songT=0
   while (game.spawnIndex < game.songNotes.length && game.songTimeCursor < songT + game.tileFallSeconds + 2) {
     const [midi, beats] = game.songNotes[game.spawnIndex++];
     spawnTile(midi, beats);
   }
 
-  // Check for misses (tile past hit line)
+  // Auto-play the melody as a soft background track. User hits layer on top.
+  while (game.bgNoteIndex < game.tiles.length) {
+    const tile = game.tiles[game.bgNoteIndex];
+    if (!tile) break;
+    if (tile.bgPlayed) { game.bgNoteIndex++; continue; }
+    // Schedule once the note is within ~0.2s of the hit line
+    if (tile.hitTime - songT <= 0.02) {
+      tile.bgPlayed = true;
+      // Quiet auto-play only if user hasn't already hit it (to avoid doubling)
+      if (!tile.hit) {
+        Audio.playBgNote(tile.note, 0, Math.max(0.25, tile.beats * beatSeconds * 0.6));
+      }
+      game.bgNoteIndex++;
+    } else {
+      break;
+    }
+  }
+
+  // Metronome: tick every beat, strong tick at the downbeat; bass on downbeat
+  const beatIndexNow = Math.floor(songT / beatSeconds);
+  while (game.nextBeatIndex <= beatIndexNow + 1) {
+    const beatT = game.nextBeatIndex * beatSeconds;
+    const when = beatT - songT; // seconds from now
+    if (when >= -0.01) {
+      const strong = (game.nextBeatIndex % 4) === 0;
+      Audio.playTick(Math.max(0, when), strong);
+      if (strong) {
+        // Soft bass root two octaves below current-ish melody
+        const upcoming = game.tiles.find(tl => !tl.hit && tl.hitTime >= beatT - 0.1);
+        const bassMidi = upcoming ? upcoming.note - 24 : 36;
+        Audio.playBass(bassMidi, Math.max(0, when), beatSeconds * 1.8);
+      }
+    }
+    game.nextBeatIndex++;
+  }
+
+  // Check for misses (tile past hit line by more than HIT_LATE)
   for (const tile of game.tiles) {
-    if (!tile.hit && !tile.missed && tile.hitTime + 0.15 < songT) {
+    if (!tile.hit && !tile.missed && tile.hitTime + HIT_LATE < songT) {
       tile.missed = true;
       game.combo = 0;
       game.misses++;
-      Audio.miss();
       if (game.maxMisses > 0 && game.misses >= game.maxMisses) {
         endGame();
         return;
@@ -439,7 +562,7 @@ function loop(t) {
   }
 
   // Remove tiles that have scrolled off-screen
-  const cutoff = songT - 0.8;
+  const cutoff = songT - 1.2;
   game.tiles = game.tiles.filter(t => t.hitTime > cutoff);
 
   // End when song finished
@@ -513,6 +636,25 @@ function render(songT) {
     ctx2d.fill();
     ctx2d.restore();
   }
+
+  // Countdown overlay during lead-in
+  if (songT < 0) {
+    const remaining = Math.ceil(-songT);
+    ctx2d.save();
+    ctx2d.globalAlpha = 0.85;
+    ctx2d.textAlign = 'center';
+    ctx2d.textBaseline = 'middle';
+    ctx2d.fillStyle = settings.tileGlow;
+    ctx2d.shadowColor = settings.tileGlow;
+    ctx2d.shadowBlur = 30;
+    ctx2d.font = 'bold 180px system-ui, sans-serif';
+    ctx2d.fillText(String(remaining), W / 2, H / 2);
+    ctx2d.font = 'bold 24px system-ui, sans-serif';
+    ctx2d.shadowBlur = 0;
+    ctx2d.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx2d.fillText('Bereit machen…', W / 2, H / 2 + 120);
+    ctx2d.restore();
+  }
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -532,27 +674,36 @@ function handleTap(x, y) {
   if (lane < 0 || lane >= LANES) return;
 
   const songT = currentSongTime();
-  // Find earliest active tile in this lane near hit line
+  // Find the closest tile in this lane within the hit window.
+  // Window: HIT_EARLY seconds before the hit line, HIT_LATE seconds after.
   let best = null;
-  let bestDt = Infinity;
+  let bestAbs = Infinity;
   for (const tile of game.tiles) {
     if (tile.hit || tile.missed) continue;
     if (tile.lane !== lane) continue;
-    const dt = Math.abs(tile.hitTime - songT);
-    if (dt < bestDt && dt < 0.35) {
+    const rel = tile.hitTime - songT;
+    if (rel > HIT_EARLY) continue;
+    if (rel < -HIT_LATE) continue;
+    const abs = Math.abs(rel);
+    if (abs < bestAbs) {
       best = tile;
-      bestDt = dt;
+      bestAbs = abs;
     }
   }
 
   if (best) {
     best.hit = true;
-    Audio.playNote(best.note, Math.max(0.25, best.beats * 0.35));
+    // Rate the hit for scoring + visual feedback
+    const offset = Math.abs(best.hitTime - songT);
+    let quality = 'good';
+    if (offset < 0.08) quality = 'perfect';
+    else if (offset < 0.2) quality = 'great';
+    Audio.playNote(best.note, Math.max(0.25, best.beats * 0.45));
     game.combo++;
     if (game.combo > game.maxCombo) game.maxCombo = game.combo;
-    const points = 10 + Math.min(20, game.combo);
-    game.score += points;
-    showHitFlash(lane * laneW + laneW / 2, H * HIT_LINE_RATIO);
+    const base = quality === 'perfect' ? 30 : quality === 'great' ? 20 : 10;
+    game.score += base + Math.min(20, game.combo);
+    showHitFlash(lane * laneW + laneW / 2, H * HIT_LINE_RATIO, quality);
   } else {
     Audio.miss();
     game.combo = 0;
@@ -562,7 +713,7 @@ function handleTap(x, y) {
   updateHud();
 }
 
-function showHitFlash(x, y) {
+function showHitFlash(x, y, quality = 'good') {
   const el = document.createElement('div');
   el.className = 'hit-flash';
   el.style.left = x + 'px';
@@ -571,8 +722,20 @@ function showHitFlash(x, y) {
   el.style.height = '120px';
   el.style.marginLeft = '-60px';
   el.style.marginTop = '-60px';
+  if (quality === 'perfect') el.style.filter = 'hue-rotate(60deg) brightness(1.3)';
+  else if (quality === 'great') el.style.filter = 'hue-rotate(20deg)';
   document.getElementById('app').appendChild(el);
   setTimeout(() => el.remove(), 400);
+
+  if (quality !== 'good') {
+    const label = document.createElement('div');
+    label.className = 'hit-label ' + quality;
+    label.textContent = quality === 'perfect' ? 'PERFECT' : 'GREAT';
+    label.style.left = x + 'px';
+    label.style.top = (y - 40) + 'px';
+    document.getElementById('app').appendChild(label);
+    setTimeout(() => label.remove(), 700);
+  }
 }
 
 function updateHud() {
@@ -652,6 +815,10 @@ maxMissesSelect.addEventListener('change', () => {
   settings.maxMisses = Number(maxMissesSelect.value);
   saveSettings();
 });
+songLoopsSelect.addEventListener('change', () => {
+  settings.songLoops = Number(songLoopsSelect.value) || 1;
+  saveSettings();
+});
 
 helpBtn.addEventListener('click', () => show(helpOverlay));
 closeHelpBtn.addEventListener('click', () => hide(helpOverlay));
@@ -669,6 +836,7 @@ function init() {
   tileColor.value = settings.tileColor;
   tileGlow.value = settings.tileGlow;
   maxMissesSelect.value = String(settings.maxMisses);
+  songLoopsSelect.value = String(settings.songLoops);
   applyCssVars();
 
   const bg = findBg(settings.bgId) || PRESET_BGS[0];

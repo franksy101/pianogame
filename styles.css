@@ -269,3 +269,21 @@ body {
   from { opacity: 1; transform: translate(-50%, -50%) scale(0.4); }
   to { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
 }
+
+.hit-label {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, 0);
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.7);
+  z-index: 2;
+  animation: rise 0.7s ease-out forwards;
+}
+.hit-label.perfect { color: #ffe066; }
+.hit-label.great { color: #9dff70; }
+@keyframes rise {
+  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -60px) scale(1.15); }
+}
