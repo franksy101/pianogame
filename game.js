@@ -119,6 +119,10 @@ const autoMorph = document.getElementById('auto-morph');
 const morphInterval = document.getElementById('morph-interval');
 const tileColor = document.getElementById('tile-color');
 const tileGlow = document.getElementById('tile-glow');
+const maxMissesSelect = document.getElementById('max-misses');
+const helpBtn = document.getElementById('help-btn');
+const helpOverlay = document.getElementById('help-overlay');
+const closeHelpBtn = document.getElementById('close-help');
 const bgA = document.getElementById('bg-a');
 const bgB = document.getElementById('bg-b');
 
@@ -146,6 +150,7 @@ const settings = Object.assign({
   morphInterval: 8,
   tileColor: '#111111',
   tileGlow: '#00e5ff',
+  maxMisses: 3, // 0 = unlimited
 }, loadSettings());
 
 let customBgs = loadCustomBgs();
@@ -361,6 +366,7 @@ function startGame() {
   game.combo = 0;
   game.maxCombo = 0;
   game.misses = 0;
+  game.maxMisses = Number(settings.maxMisses) || 0;
   game.speedMul = Number(settings.speed) || 1.0;
   game.tileFallSeconds = 2.0 / game.speedMul;
   game.lastTime = performance.now();
@@ -425,7 +431,7 @@ function loop(t) {
       game.combo = 0;
       game.misses++;
       Audio.miss();
-      if (game.misses >= 3) {
+      if (game.maxMisses > 0 && game.misses >= game.maxMisses) {
         endGame();
         return;
       }
@@ -551,7 +557,7 @@ function handleTap(x, y) {
     Audio.miss();
     game.combo = 0;
     game.misses++;
-    if (game.misses >= 3) endGame();
+    if (game.maxMisses > 0 && game.misses >= game.maxMisses) endGame();
   }
   updateHud();
 }
@@ -571,7 +577,13 @@ function showHitFlash(x, y) {
 
 function updateHud() {
   scoreEl.textContent = game.score;
-  comboEl.textContent = game.combo > 1 ? `Combo x${game.combo}` : '';
+  const parts = [];
+  if (game.combo > 1) parts.push(`Combo x${game.combo}`);
+  if (game.maxMisses > 0) {
+    const left = Math.max(0, game.maxMisses - game.misses);
+    parts.push('♥'.repeat(left) + '·'.repeat(game.maxMisses - left));
+  }
+  comboEl.textContent = parts.join('   ');
 }
 
 function endGame(finished = false) {
@@ -636,6 +648,13 @@ autoMorph.addEventListener('change', () => { settings.autoMorph = autoMorph.chec
 morphInterval.addEventListener('change', () => { settings.morphInterval = Number(morphInterval.value) || 8; saveSettings(); scheduleAutoMorph(); });
 tileColor.addEventListener('input', () => { settings.tileColor = tileColor.value; applyCssVars(); saveSettings(); });
 tileGlow.addEventListener('input', () => { settings.tileGlow = tileGlow.value; applyCssVars(); saveSettings(); });
+maxMissesSelect.addEventListener('change', () => {
+  settings.maxMisses = Number(maxMissesSelect.value);
+  saveSettings();
+});
+
+helpBtn.addEventListener('click', () => show(helpOverlay));
+closeHelpBtn.addEventListener('click', () => hide(helpOverlay));
 
 // ---------- Init ----------
 function init() {
@@ -649,6 +668,7 @@ function init() {
   morphInterval.value = settings.morphInterval;
   tileColor.value = settings.tileColor;
   tileGlow.value = settings.tileGlow;
+  maxMissesSelect.value = String(settings.maxMisses);
   applyCssVars();
 
   const bg = findBg(settings.bgId) || PRESET_BGS[0];

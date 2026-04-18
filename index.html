@@ -24,6 +24,24 @@
   </div>
 
   <button id="menu-btn" class="icon-btn" title="Menü">☰</button>
+  <button id="help-btn" class="icon-btn help" title="Anleitung">?</button>
+
+  <div id="help-overlay" class="panel hidden">
+    <h1>Anleitung</h1>
+    <div class="howto">
+      <p>Kacheln fallen von oben in vier Spuren herunter. Tippe jede schwarze Kachel genau dann an, wenn sie die leuchtende Hit-Line am unteren Rand erreicht.</p>
+      <ul>
+        <li><b>Touch/Maus:</b> Spur antippen</li>
+        <li><b>Tastatur:</b> <kbd>A</kbd> <kbd>S</kbd> <kbd>K</kbd> <kbd>L</kbd> für Spur 1–4</li>
+        <li>Je präziser das Timing, desto höher der Combo-Multiplikator</li>
+        <li>Zu viele verpasste Kacheln → Game Over (Anzahl im Menü einstellbar)</li>
+        <li>Eigene Hintergrundbilder im Menü unter „Hintergrund → Eigenes Bild hochladen"</li>
+      </ul>
+    </div>
+    <div class="buttons">
+      <button id="close-help">Verstanden</button>
+    </div>
+  </div>
 
   <div id="menu" class="panel hidden">
     <h1>Piano Tiles</h1>
@@ -74,6 +92,33 @@
       <h2>Tiles</h2>
       <label class="row">Farbe: <input type="color" id="tile-color" value="#111111" /></label>
       <label class="row">Glow: <input type="color" id="tile-glow" value="#00e5ff" /></label>
+    </section>
+
+    <section>
+      <h2>Schwierigkeit</h2>
+      <label class="row">
+        Erlaubte Fehler:
+        <select id="max-misses">
+          <option value="1">1 (Hardcore)</option>
+          <option value="3" selected>3 (Normal)</option>
+          <option value="5">5 (Leicht)</option>
+          <option value="10">10 (Sehr leicht)</option>
+          <option value="0">∞ (Unbegrenzt)</option>
+        </select>
+      </label>
+    </section>
+
+    <section>
+      <h2>Anleitung</h2>
+      <div class="howto">
+        <p>Kacheln fallen von oben in vier Spuren herunter. Tippe jede schwarze Kachel genau dann an, wenn sie die leuchtende Hit-Line am unteren Rand erreicht.</p>
+        <ul>
+          <li><b>Touch/Maus:</b> Spur antippen</li>
+          <li><b>Tastatur:</b> <kbd>A</kbd> <kbd>S</kbd> <kbd>K</kbd> <kbd>L</kbd> für Spur 1–4</li>
+          <li>Timing zählt: präzise Treffer steigern den Combo-Multiplikator</li>
+          <li>Zu viele verpasste Kacheln → Game Over (Anzahl einstellbar oben)</li>
+        </ul>
+      </div>
     </section>
 
     <div class="buttons">
