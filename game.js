@@ -170,6 +170,46 @@ const Audio = {
     osc.start(now);
     osc.stop(now + 0.3);
   },
+  // Sustained piano tone for holds
+  startSustained(midi) {
+    if (!this.ctx) return null;
+    const ctx = this.ctx;
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    const now = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + 0.15);
+    gain.connect(this.master);
+    const oscs = [];
+    const partials = [
+      { ratio: 1, gain: 1.0, type: 'triangle' },
+      { ratio: 2, gain: 0.3, type: 'sine' },
+      { ratio: 3, gain: 0.12, type: 'sine' },
+    ];
+    partials.forEach(p => {
+      const osc = ctx.createOscillator();
+      osc.type = p.type;
+      osc.frequency.value = freq * p.ratio;
+      const g = ctx.createGain();
+      g.gain.value = p.gain;
+      osc.connect(g).connect(gain);
+      osc.start(now);
+      oscs.push(osc);
+    });
+    return { gain, oscs };
+  },
+  stopSustained(handle) {
+    if (!handle || !this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    try {
+      handle.gain.gain.cancelScheduledValues(now);
+      handle.gain.gain.setValueAtTime(Math.max(0.001, handle.gain.gain.value), now);
+      handle.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      handle.oscs.forEach(o => o.stop(now + 0.22));
+    } catch (_) {}
+  },
 };
 
 // ---------- Visualizer (generative, music-reactive background) ----------
@@ -871,6 +911,45 @@ function loop(t) {
     }
   }
 
+  // Update active holds: continuous scoring, sparks, pulse vibration
+  const nowMs = performance.now();
+  for (const [id, h] of activeHolds) {
+    const elapsed = songT - h.startSongT;
+    const maxHold = Math.max(0, h.endsAt - h.tile.hitTime); // hold duration in seconds
+    const active = songT < h.endsAt + 0.1;
+
+    if (active && elapsed > 0) {
+      // Award bonus points proportional to held time (cap at tile length)
+      const effective = Math.min(elapsed, maxHold);
+      const delta = Math.max(0, effective - (h.lastScoreT - h.startSongT));
+      if (delta > 0) {
+        game.score += Math.round(delta * 40); // 40 pts per held second
+      }
+      h.lastScoreT = songT;
+
+      // Periodic vibration pulse (every ~120ms)
+      if (nowMs - h.lastVibT > 120) {
+        vibrate(18);
+        h.lastVibT = nowMs;
+      }
+
+      // Emit sparks at pointer position
+      if (nowMs - h.lastSparkT > 28) {
+        spawnSparks(h.x, h.y, 3);
+        h.lastSparkT = nowMs;
+      }
+    } else {
+      // Natural end of the long note: stop audio but keep hold "alive" until release
+      if (h.audio) {
+        Audio.stopSustained(h.audio);
+        h.audio = null;
+      }
+    }
+  }
+
+  // Update spark particles
+  updateSparks(dt);
+
   // Remove tiles that have scrolled off-screen
   const cutoff = songT - 1.2;
   game.tiles = game.tiles.filter(t => t.hitTime > cutoff);
@@ -913,8 +992,7 @@ function render(songT) {
   const beatSeconds = 60 / game.bpm / game.speedMul;
 
   for (const tile of game.tiles) {
-    if (tile.hit) continue;
-    const dtToHit = tile.hitTime - songT; // seconds until reaching hit line
+    const dtToHit = tile.hitTime - songT;
     const yBottom = hitY - (dtToHit / fall) * hitY;
     const tileH = (tile.beats * beatSeconds / fall) * hitY;
     const yTop = yBottom - tileH;
@@ -925,27 +1003,56 @@ function render(songT) {
     const x = tile.lane * laneW;
     const pad = 4;
 
-    // Shadow / glow
-    ctx2d.save();
-    if (!tile.missed) {
-      ctx2d.shadowColor = settings.tileGlow;
-      ctx2d.shadowBlur = 24;
-    } else {
-      ctx2d.globalAlpha = 0.35;
-    }
-    ctx2d.fillStyle = tile.missed ? '#660000' : settings.tileColor;
-    roundRect(ctx2d, x + pad, yTop + pad, laneW - pad * 2, Math.max(24, tileH - pad * 2), 10);
-    ctx2d.fill();
-    ctx2d.restore();
+    // Regular (not yet hit) tile
+    if (!tile.hit) {
+      ctx2d.save();
+      if (!tile.missed) {
+        ctx2d.shadowColor = settings.tileGlow;
+        ctx2d.shadowBlur = 24;
+      } else {
+        ctx2d.globalAlpha = 0.35;
+      }
+      ctx2d.fillStyle = tile.missed ? '#660000' : settings.tileColor;
+      roundRect(ctx2d, x + pad, yTop + pad, laneW - pad * 2, Math.max(24, tileH - pad * 2), 10);
+      ctx2d.fill();
+      ctx2d.restore();
 
-    // Top highlight
-    ctx2d.save();
-    ctx2d.globalAlpha = 0.18;
-    ctx2d.fillStyle = '#fff';
-    roundRect(ctx2d, x + pad, yTop + pad, laneW - pad * 2, 6, 6);
-    ctx2d.fill();
-    ctx2d.restore();
+      ctx2d.save();
+      ctx2d.globalAlpha = 0.18;
+      ctx2d.fillStyle = '#fff';
+      roundRect(ctx2d, x + pad, yTop + pad, laneW - pad * 2, 6, 6);
+      ctx2d.fill();
+      ctx2d.restore();
+      continue;
+    }
+
+    // Held / hit tile: keep drawing the remaining body with a pulsing glow
+    // while the player holds it.
+    if (tile.holding && songT < tile.endTime + 0.05) {
+      const pulse = 0.5 + 0.5 * Math.sin(songT * 14);
+      const remainTop = Math.min(yTop, hitY);
+      const remainBottom = hitY;
+      const h2 = Math.max(12, remainBottom - remainTop - pad * 2);
+      ctx2d.save();
+      ctx2d.shadowColor = settings.tileGlow;
+      ctx2d.shadowBlur = 20 + pulse * 30;
+      ctx2d.globalAlpha = 0.85;
+      ctx2d.fillStyle = settings.tileGlow;
+      roundRect(ctx2d, x + pad, remainTop + pad, laneW - pad * 2, h2, 10);
+      ctx2d.fill();
+      ctx2d.restore();
+
+      // Bright core
+      ctx2d.save();
+      ctx2d.globalAlpha = 0.3 + pulse * 0.4;
+      ctx2d.fillStyle = '#ffffff';
+      roundRect(ctx2d, x + pad + 4, remainTop + pad + 4, laneW - pad * 2 - 8, Math.max(4, h2 - 8), 8);
+      ctx2d.fill();
+      ctx2d.restore();
+    }
   }
+
+  renderSparks();
 
   // Countdown overlay during lead-in
   if (songT < 0) {
@@ -967,6 +1074,62 @@ function render(songT) {
   }
 }
 
+// ---------- Sparks (hold particles) ----------
+function spawnSparks(x, y, n) {
+  if (!game.sparks) game.sparks = [];
+  for (let i = 0; i < n; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 220;
+    game.sparks.push({
+      x, y,
+      vx: Math.cos(ang) * speed,
+      vy: Math.sin(ang) * speed - 30,
+      life: 0,
+      maxLife: 0.45 + Math.random() * 0.35,
+      size: 1 + Math.random() * 2.2,
+    });
+  }
+  if (game.sparks.length > 600) game.sparks.splice(0, game.sparks.length - 600);
+}
+
+function updateSparks(dt) {
+  if (!game.sparks) return;
+  const next = [];
+  for (const s of game.sparks) {
+    s.life += dt;
+    if (s.life >= s.maxLife) continue;
+    s.vy += 420 * dt;        // gravity
+    s.vx *= 1 - 1.4 * dt;
+    s.vy *= 1 - 0.6 * dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    next.push(s);
+  }
+  game.sparks = next;
+}
+
+function renderSparks() {
+  if (!game.sparks || game.sparks.length === 0) return;
+  const ctx = ctx2d;
+  const glow = settings.tileGlow;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of game.sparks) {
+    const a = 1 - s.life / s.maxLife;
+    const r = s.size * (1 + a);
+    const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 4);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.35, glow);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r * 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   r = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
@@ -978,14 +1141,22 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function handleTap(x, y) {
-  if (game.state !== 'playing') return;
-  const lane = Math.floor(x / laneW);
-  if (lane < 0 || lane >= LANES) return;
+// Active holds keyed by pointer (or keyboard) id.
+// state: { lane, tile, audio, x, y, startSongT, lastScoreT, lastVibT, lastSparkT, endsAt }
+const activeHolds = new Map();
 
+function vibrate(pattern) {
+  if (navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch (_) {}
+  }
+}
+
+function startHit(holdId, lane, x, y) {
+  if (game.state !== 'playing') return;
+  if (lane < 0 || lane >= LANES) return;
   const songT = currentSongTime();
-  // Find the closest tile in this lane within the hit window.
-  // Window: HIT_EARLY seconds before the hit line, HIT_LATE seconds after.
+
+  // Find the closest unhit tile in this lane inside the hit window
   let best = null;
   let bestAbs = Infinity;
   for (const tile of game.tiles) {
@@ -995,32 +1166,64 @@ function handleTap(x, y) {
     if (rel > HIT_EARLY) continue;
     if (rel < -HIT_LATE) continue;
     const abs = Math.abs(rel);
-    if (abs < bestAbs) {
-      best = tile;
-      bestAbs = abs;
-    }
+    if (abs < bestAbs) { best = tile; bestAbs = abs; }
   }
 
-  if (best) {
-    best.hit = true;
-    // Rate the hit for scoring + visual feedback
-    const offset = Math.abs(best.hitTime - songT);
-    let quality = 'good';
-    if (offset < 0.08) quality = 'perfect';
-    else if (offset < 0.2) quality = 'great';
-    Audio.playNote(best.note, Math.max(0.25, best.beats * 0.45));
-    game.combo++;
-    if (game.combo > game.maxCombo) game.maxCombo = game.combo;
-    const base = quality === 'perfect' ? 30 : quality === 'great' ? 20 : 10;
-    game.score += base + Math.min(20, game.combo);
-    showHitFlash(lane * laneW + laneW / 2, H * HIT_LINE_RATIO, quality);
-  } else {
+  if (!best) {
+    // Missed tap
     Audio.miss();
+    vibrate([8, 30, 8]);
     game.combo = 0;
     game.misses++;
     if (game.maxMisses > 0 && game.misses >= game.maxMisses) endGame();
+    updateHud();
+    return;
   }
+
+  best.hit = true;
+  best.holding = true;
+  const offset = Math.abs(best.hitTime - songT);
+  let quality = 'good';
+  if (offset < 0.08) quality = 'perfect';
+  else if (offset < 0.2) quality = 'great';
+  game.combo++;
+  if (game.combo > game.maxCombo) game.maxCombo = game.combo;
+  const base = quality === 'perfect' ? 30 : quality === 'great' ? 20 : 10;
+  game.score += base + Math.min(20, game.combo);
+  showHitFlash(lane * laneW + laneW / 2, H * HIT_LINE_RATIO, quality);
+
+  // Start sustained tone and track the hold
+  const audio = Audio.startSustained(best.note);
+  vibrate(quality === 'perfect' ? 45 : 28);
+
+  activeHolds.set(holdId, {
+    lane,
+    tile: best,
+    audio,
+    x: x == null ? lane * laneW + laneW / 2 : x,
+    y: y == null ? H * HIT_LINE_RATIO : y,
+    startSongT: songT,
+    lastScoreT: songT,
+    lastVibT: performance.now(),
+    lastSparkT: 0,
+    endsAt: best.endTime,
+  });
   updateHud();
+}
+
+function moveHit(holdId, x, y) {
+  const h = activeHolds.get(holdId);
+  if (!h) return;
+  h.x = x; h.y = y;
+}
+
+function endHit(holdId) {
+  const h = activeHolds.get(holdId);
+  if (!h) return;
+  activeHolds.delete(holdId);
+  if (h.audio) Audio.stopSustained(h.audio);
+  if (h.tile) h.tile.holding = false;
+  vibrate(10);
 }
 
 function showHitFlash(x, y, quality = 'good') {
@@ -1072,15 +1275,31 @@ function endGame(finished = false) {
 // ---------- Input ----------
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  handleTap(e.clientX, e.clientY);
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  const lane = Math.floor(e.clientX / laneW);
+  startHit('p' + e.pointerId, lane, e.clientX, e.clientY);
 });
+canvas.addEventListener('pointermove', (e) => {
+  moveHit('p' + e.pointerId, e.clientX, e.clientY);
+});
+const endPointer = (e) => endHit('p' + e.pointerId);
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', endPointer);
+
+const KEY_LANE = { 'a': 0, 's': 1, 'k': 2, 'l': 3, 'd': 1, 'j': 2 };
 window.addEventListener('keydown', (e) => {
   if (game.state !== 'playing') return;
-  const map = { 'a': 0, 's': 1, 'k': 2, 'l': 3, 'd': 1, 'j': 2 };
-  const lane = map[e.key.toLowerCase()];
+  if (e.repeat) return;
+  const lane = KEY_LANE[e.key.toLowerCase()];
   if (lane !== undefined) {
-    handleTap(lane * laneW + laneW / 2, H * HIT_LINE_RATIO);
+    startHit('k' + e.key.toLowerCase(), lane,
+      lane * laneW + laneW / 2, H * HIT_LINE_RATIO);
   }
+});
+window.addEventListener('keyup', (e) => {
+  const lane = KEY_LANE[e.key.toLowerCase()];
+  if (lane !== undefined) endHit('k' + e.key.toLowerCase());
 });
 
 // ---------- UI wiring ----------
